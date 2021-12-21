@@ -384,6 +384,7 @@ func (ws *workingSet) pickAndRunActions(
 
 	// initial action iterator
 	blkCtx := protocol.MustGetBlockCtx(ctx)
+	ctxWithBlockContext := ctx
 	if ap != nil {
 		actionIterator := actioniterator.NewActionIterator(ap.PendingActionMap())
 		for {
@@ -395,10 +396,11 @@ func (ws *workingSet) pickAndRunActions(
 				actionIterator.PopAccount()
 				continue
 			}
-			if ctx, err = withActionCtx(ctx, nextAction); err == nil {
+			actionCtx, err := withActionCtx(ctxWithBlockContext, nextAction)
+			if err == nil {
 				for _, p := range reg.All() {
 					if validator, ok := p.(protocol.ActionValidator); ok {
-						if err = validator.Validate(ctx, nextAction.Action(), ws); err != nil {
+						if err = validator.Validate(actionCtx, nextAction.Action(), ws); err != nil {
 							break
 						}
 					}
@@ -413,7 +415,7 @@ func (ws *workingSet) pickAndRunActions(
 				actionIterator.PopAccount()
 				continue
 			}
-			receipt, err := ws.runAction(ctx, nextAction)
+			receipt, err := ws.runAction(actionCtx, nextAction)
 			switch errors.Cause(err) {
 			case nil:
 				// do nothing
@@ -425,7 +427,7 @@ func (ws *workingSet) pickAndRunActions(
 			}
 			if receipt != nil {
 				blkCtx.GasLimit -= receipt.GasConsumed
-				ctx = protocol.WithBlockCtx(ctx, blkCtx)
+				ctxWithBlockContext = protocol.WithBlockCtx(ctx, blkCtx)
 				receipts = append(receipts, receipt)
 			}
 			executedActions = append(executedActions, nextAction)
@@ -439,10 +441,11 @@ func (ws *workingSet) pickAndRunActions(
 	}
 
 	for _, selp := range postSystemActions {
-		if ctx, err = withActionCtx(ctx, selp); err != nil {
+		actionCtx, err := withActionCtx(ctxWithBlockContext, selp)
+		if err != nil {
 			return nil, err
 		}
-		receipt, err := ws.runAction(ctx, selp)
+		receipt, err := ws.runAction(actionCtx, selp)
 		if err != nil {
 			return nil, err
 		}
